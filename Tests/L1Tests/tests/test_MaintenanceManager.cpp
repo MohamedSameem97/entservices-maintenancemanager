@@ -100,7 +100,8 @@ protected:
         Wraps::setImpl(p_wrapsImplMock);
 
 	clearMaintenanceRecord();
-        remove("/opt/secure/reboot/maintenance_reboot");
+        int rc = remove("/opt/secure/reboot/maintenance_reboot");
+        (void)rc;
     }
 
     virtual ~MaintenanceManagerTest() override
@@ -142,10 +143,10 @@ static AssertionResult isValidCtrlmRcuIarmEvent(IARM_EventId_t ctrlmRcuIarmEvent
 
 class MaintenanceManagerInitializedEventTest : public MaintenanceManagerTest {
 protected:
-    IARM_EventHandler_t               controlEventHandler_;
+    IARM_EventHandler_t               controlEventHandler_ = nullptr;
     NiceMock<ServiceMock>             service_;
     NiceMock<FactoriesImplementation> factoriesImplementation_;
-    PLUGINHOST_DISPATCHER* dispatcher_;
+    PLUGINHOST_DISPATCHER* dispatcher_ = nullptr;
     Core::JSONRPC::Message message_;
 
     MaintenanceManagerInitializedEventTest() :
@@ -550,6 +551,7 @@ TEST_F(MaintenanceManagerTest, stopMaintenanceRPC_IDLE2ERROR)
 TEST_F(MaintenanceManagerTest, stopMaintenanceRPC_STARTED2ERROR)
 {
     Maint_notify_status_t status = MAINTENANCE_STARTED;
+    Plugin::MaintenanceManager::_instance = &(*plugin_);
     plugin_->setNotifyStatus(status);
     EXPECT_EQ(Core::ERROR_NONE, handler_.Invoke(connection, _T("org.rdk.MaintenanceManager.1.getMaintenanceActivityStatus"), _T("{}"), response_));
     EXPECT_EQ(response_, "{\"maintenanceStatus\":\"MAINTENANCE_STARTED\",\"LastSuccessfulCompletionTime\":0,\"isCriticalMaintenance\":false,\"isRebootPending\":false,\"success\":true}");
@@ -856,7 +858,7 @@ TEST(MaintenanceManagerNotifyStatus, NotifyStatusToString) {
     };
     for (const auto& mStatus : maint_Status) {
         Maint_notify_status_t status = mStatus.first;
-        std::string expected = mStatus.second;
+        const std::string& expected = mStatus.second;
         EXPECT_EQ(expected, notifyStatusToString(status));
     }
 }
@@ -871,10 +873,10 @@ TEST(MaintenanceManagerCheckOptMode, CheckValidOptOutMode) {
 	};
 	
 	for (const auto& optMode: maint_OptOutModes){
-		EXPECT_EQ(true, checkValidOptOutModes(optMode));
+        EXPECT_TRUE(checkValidOptOutModes(optMode));
 	}
 	std::string invalid_optMode = "INVALID_OPTOUT_MODE";
-	EXPECT_EQ(false, checkValidOptOutModes(invalid_optMode));
+    EXPECT_FALSE(checkValidOptOutModes(invalid_optMode));
 }
 
 /* ---- getFileContent() ---- */
@@ -893,7 +895,8 @@ TEST(GetFileContentTest, FileExistsAndHasContent) {
     EXPECT_EQ("Line 1", vecOfStrs[0]);
     EXPECT_EQ("Line 2", vecOfStrs[1]);
     EXPECT_EQ("Line 3", vecOfStrs[2]);
-	std::remove(testFilePath.c_str());
+	int rc = std::remove(testFilePath.c_str());
+	(void)rc;
 }
 
 TEST(GetFileContentTest, FileDoesNotExist) {
@@ -926,7 +929,8 @@ protected:
     void TearDown() override {
 	string test_name = getCurrentTestName();
 	if (test_name != "FileDoesNotExist"){
-		std::remove(testFilePath.c_str());
+		int rc = std::remove(testFilePath.c_str());
+		(void)rc;
 	}
     }
 };
@@ -1046,6 +1050,24 @@ TEST_F(MaintenanceManagerTest, TimerHandler_Handles_failedtask) {
     plugin_->timer_handler(SIGALRM);
 
     EXPECT_FALSE(plugin_->m_task_map[matchedTask]); // should be set to false
+}
+
+TEST_F(MaintenanceManagerTest, TimerHandler_StaleGeneration_DoesNotFailCurrentTask)
+{
+    using namespace WPEFramework::Plugin;
+
+    std::string taskA = task_names_foreground[TASK_RFC];
+    std::string taskB = task_names_foreground[TASK_SWUPDATE];
+    MaintenanceManager::currentTask = taskB;
+    plugin_->m_task_map[taskA] = false;
+    plugin_->m_task_map[taskB] = true;
+    plugin_->g_task_status = 0;
+    MaintenanceManager::g_armedTimerGeneration = 2;
+
+    plugin_->timer_handler(SIGALRM, 1); // queued expiry for the previous start
+
+    EXPECT_TRUE(plugin_->m_task_map[taskB]);
+    EXPECT_EQ(plugin_->g_task_status, 0);
 }
 
 TEST_F(MaintenanceManagerTest, TimerHandler_NonSIGALRM_Ignored)
@@ -1372,10 +1394,35 @@ TEST_F(MaintenanceManagerInitializedEventTest, TaskExecutionThread_NoSecurityAge
     plugin_->task_execution_thread();
 }
 
-TEST_F(MaintenanceManagerTest, DeinitializeIARM_RemovesHandlerAndNullifiesInstance) {
-    plugin_->m_service = &service_; 
+TEST_F(MaintenanceManagerTest, DeinitializeIARM_StopsCallbacksAndIgnoresLaterEvents) {
+    Plugin::MaintenanceManager::_instance = &(*plugin_);
+    plugin_->setNotifyStatus(MAINTENANCE_STARTED);
     plugin_->DeinitializeIARM();
 
+    EXPECT_TRUE(Plugin::MaintenanceManager::m_iarmCallbacksStopped);
+    EXPECT_EQ(Plugin::MaintenanceManager::m_iarmCallbacksInFlight, 0);
+
+    IARM_Bus_MaintMGR_EventData_t eventData = {};
+    eventData.data.maintenance_module_status.status = MAINT_RFC_COMPLETE;
+    Plugin::MaintenanceManager::_MaintenanceMgrEventHandler(IARM_BUS_MAINTENANCE_MGR_NAME,
+                                                            IARM_BUS_MAINTENANCEMGR_EVENT_UPDATE,
+                                                            &eventData, sizeof(eventData));
+    EXPECT_EQ(plugin_->getNotifyStatus(), MAINTENANCE_STARTED);
+}
+
+/* Avoid MaintenanceManagerInitializedEventTest: Activate()d dispatcher + ServiceMock
+ * can abort with "pure virtual method called". */
+TEST_F(MaintenanceManagerTest, Deinitialize_NullifiesInstanceAndIgnoresLaterIarmEvent) {
+    Plugin::MaintenanceManager::_instance = &(*plugin_);
+    plugin_->setNotifyStatus(MAINTENANCE_IDLE);
+
+    plugin_->Deinitialize(&service_);
+    EXPECT_EQ(Plugin::MaintenanceManager::_instance, nullptr);
+
+    IARM_Bus_MaintMGR_EventData_t eventData = {};
+    Plugin::MaintenanceManager::_MaintenanceMgrEventHandler(IARM_BUS_MAINTENANCE_MGR_NAME,
+                                                            IARM_BUS_MAINTENANCEMGR_EVENT_UPDATE,
+                                                            &eventData, sizeof(eventData));
 }
 
 TEST_F(MaintenanceManagerTest, GetServiceState_Available) {

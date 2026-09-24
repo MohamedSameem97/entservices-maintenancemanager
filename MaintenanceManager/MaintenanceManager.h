@@ -22,6 +22,9 @@
 
 #include <stdint.h>
 #include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <atomic>
 #include <map>
 #include <time.h>
 #include <signal.h>
@@ -207,6 +210,8 @@ namespace WPEFramework
             bool m_abort_flag;
             uint16_t g_task_status;
             bool g_unsolicited_complete;
+            bool m_workerStartInProgress = false; /* Guarded by m_statusMutex while startMaintenance replaces m_thread */
+            bool m_workerJoinInProgress = false; /* Guarded by m_statusMutex while a terminal path joins m_thread */
             bool g_listen_to_nwevents = false;
             bool g_subscribed_for_nwevents = false;
             bool g_listen_to_deviceContextUpdate = false;
@@ -217,9 +222,14 @@ namespace WPEFramework
 #else
             bool g_suppress_maintenance_enabled = false;
 #endif
-            std::mutex m_callMutex;
-            std::mutex m_waiMutex;
-            std::mutex m_statusMutex;
+            std::mutex m_callMutex; /* Guards g_currentMode/g_triggerMode and serializes the task-execution loop in task_execution_thread() */
+            std::mutex m_waiMutex; /* Guards g_listen_to_deviceContextUpdate, read/written by task_execution_thread() and deviceInitializationContextEventHandler() */
+            std::mutex m_statusMutex; /* Guards status fields, g_unsolicited_complete, and worker lifecycle transitions */
+            std::mutex m_taskMapMutex; /* Guards m_task_map, read/written from the JSON-RPC, IARM event, task-execution, and timer threads */
+            std::mutex m_abortFlagMutex; /* Guards m_abort_flag, read/written from the JSON-RPC and task-execution threads */
+            std::mutex m_maintenanceTypeMutex; /* Guards g_maintenance_type, which is read/written from multiple threads */
+            std::mutex m_currentTaskMutex; /* Guards currentTask, written by task_execution_thread() and read by timer_handler() on the timer thread */
+            std::mutex m_threadMutex; /* Guards assignment, joinability checks, and joins of m_thread */
             std::condition_variable task_thread;
             std::thread m_thread;
 
@@ -228,7 +238,10 @@ namespace WPEFramework
             std::map<string, DATA_TYPE> m_paramType_map;
 
             PluginHost::IShell *m_service = nullptr;
-            Exchange::IAuthService *m_authservicePlugin;
+            Exchange::IAuthService *m_authservicePlugin = nullptr;
+
+            Maintenance_Type_t getMaintenanceType() { std::lock_guard<std::mutex> g(m_maintenanceTypeMutex); return g_maintenance_type; }
+            void setMaintenanceType(Maintenance_Type_t type) { std::lock_guard<std::mutex> g(m_maintenanceTypeMutex); g_maintenance_type = type; }
 
             bool isDeviceOnline();
             void task_execution_thread();
@@ -248,7 +261,7 @@ namespace WPEFramework
             bool isWhoAmIEnabled();
             bool knowWhoAmI(string &activation_status);
             bool subscribeToDeviceInitializationEvent();
-            bool setDeviceInitializationContext(JsonObject joGetResult);
+            bool setDeviceInitializationContext(const JsonObject &joGetResult);
             bool getActivatedStatus(bool &skipFirmwareCheck);
             const string checkActivatedStatus(void);
             bool queryIAuthService();
@@ -284,10 +297,21 @@ namespace WPEFramework
             static int runScript(const std::string &script, const std::string &args, string *output = NULL, string *error = NULL, int timeout = 30000);
 
             /* Timer Implementations */
-            static void timer_handler(int signo);
+            static void timer_handler(int signo, int armedGeneration = -1); /* armedGeneration < 0 skips the stale-callback check (unit tests) */
+            static void timerThreadCallback(union sigval sv); /* SIGEV_THREAD entry point: runs on a normal thread, safe to lock/allocate */
             static timer_t timerid;
             static string currentTask;
             static bool g_task_timerCreated;
+            static std::atomic<int> g_armedTimerGeneration; /* Bumped on start/stop/delete; copied into sigev sival_int so late SIGEV_THREAD callbacks can be ignored */
+            static std::mutex m_timerCallbackMutex; /* Static (outlives any instance): timer_handler() holds this for its body; Deinitialize() holds it while nulling _instance so queued SIGEV_THREAD callbacks cannot pass a stale non-null check */
+#if defined(USE_IARMBUS) || defined(USE_IARM_BUS)
+            static std::mutex m_iarmCallbackMutex; /* Serializes IARM handler entry/exit against DeinitializeIARM() wait */
+            static std::condition_variable m_iarmCallbackCv; /* Signalled when m_iarmCallbacksInFlight reaches 0 */
+            static int m_iarmCallbacksInFlight; /* Guarded by m_iarmCallbackMutex */
+            static bool m_iarmCallbacksStopped; /* Guarded by m_iarmCallbackMutex; set during DeinitializeIARM() so new handlers do not enter */
+#endif
+            struct sigaction m_prevSigalrmAction {}; /* Previous SIGALRM disposition, saved by Initialize() and restored by Deinitialize() */
+            bool m_sigalrmSafetyNetInstalled = false; /* True only after sigaction() succeeds in Initialize(); Deinitialize() restores only then */
 
             bool maintenance_initTimer();
             bool task_startTimer();
@@ -297,13 +321,13 @@ namespace WPEFramework
             /* ---- Accessors ---- */
             bool testSetRFC(const char *rfc, const char *value, DATA_TYPE dataType) { return setRFC(rfc, value, dataType); }
             bool testReadRFC(const char *rfc) { return readRFC(rfc); }
-            Maint_notify_status_t getNotifyStatus() { return m_notify_status; }
-            void setNotifyStatus(Maint_notify_status_t status) { m_notify_status = status; }
+            Maint_notify_status_t getNotifyStatus() { std::lock_guard<std::mutex> statusGuard(m_statusMutex); return m_notify_status; }
+            void setNotifyStatus(Maint_notify_status_t status) { std::lock_guard<std::mutex> statusGuard(m_statusMutex); m_notify_status = status; }
             void testStartCriticalTasks() { startCriticalTasks(); }
             pid_t callGetTaskPID(const char *taskname) { return getTaskPID(taskname); }
             void callInternetStatusChangeEventHandler(const JsonObject &parameters) { internetStatusChangeEventHandler(parameters); }
             int callAbortTask(const char *taskname, int sig_to_send) { return abortTask(taskname, sig_to_send); }
-            void setUnsolicitedComplete(bool value) { g_unsolicited_complete = value; }
+            void setUnsolicitedComplete(bool value) { std::lock_guard<std::mutex> statusGuard(m_statusMutex); g_unsolicited_complete = value; }
             WPEFramework::JSONRPC::LinkType<WPEFramework::Core::JSON::IElement> *PublicGetThunderPluginHandle(const char *callsign)
             {
                 std::cout << "Inside PublicGetThunderPluginHandle" << std::endl;
