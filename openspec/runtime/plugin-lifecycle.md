@@ -24,7 +24,7 @@
 - Reads WHOAMI_SUPPORT from /etc/device.properties.
 - If WhoAmI enabled, subscribes to SecManager device context update event.
 - Calls InitializeIARM() when IARM support macros are enabled.
-- Registers SIGALRM handler for task timeout.
+- Installs a SIG_IGN safety-net handler for SIGALRM so a stray external SIGALRM can't terminate the process; the task timer itself is delivered via SIGEV_THREAD (see maintenance_initTimer()), not a SIGALRM handler. Uses sigaction() to save the previous disposition (m_prevSigalrmAction) so Deinitialize() can restore it instead of leaving SIG_IGN installed process-wide forever.
 - Returns empty string on success, error text on signal-handler registration failure.
 
 - ASSERT(timerid != nullptr) is intended as runtime guard but may rely on platform/compiler behavior for timer_t representation.
@@ -50,13 +50,25 @@
 
 - Runtime uses:
   - worker std::thread m_thread
-  - task timer created by POSIX timer_create()/timer_settime()/timer_delete()
+  - task timer created by POSIX timer_create()/timer_settime()/timer_delete(), using SIGEV_THREAD so expiry runs timerThreadCallback() on a dedicated thread instead of a signal handler
   - condition variable task_thread for worker/event coordination
-  - multiple mutexes: m_callMutex, m_waiMutex, m_statusMutex
+  - eight single-purpose mutexes, each guarding one piece of shared state:
+    - m_callMutex: g_currentMode/g_triggerMode; also serializes the task_execution_thread() loop
+    - m_waiMutex: g_listen_to_deviceContextUpdate
+    - m_statusMutex: m_notify_status, g_task_status, g_is_critical_maintenance, g_is_reboot_pending, g_unsolicited_complete, and worker start/join transitions
+    - m_taskMapMutex: m_task_map
+    - m_abortFlagMutex: m_abort_flag
+    - m_maintenanceTypeMutex: g_maintenance_type (via getMaintenanceType()/setMaintenanceType())
+    - m_currentTaskMutex: currentTask (written by task_execution_thread(), read by timer_handler() on the timer thread)
+    - m_threadMutex: assignment, joinability checks, and joins of m_thread
+  - Lock ordering: m_statusMutex is acquired before m_callMutex when both are needed; blocking worker joins occur only after releasing m_statusMutex and are serialized by m_threadMutex.
+  - Every critical section in the source carries a `// critical section start/end: <mutex>` comment at its lock/unlock or lock_guard scope boundary.
 
 ## 6) Deinitialize()
 
 - Attempts timer deletion.
+- Drains any in-flight SIGEV_THREAD timer callback via m_timerCallbackMutex (timer_delete() does not wait for an already-running notification thread to finish) before nulling _instance or releasing m_service, preventing a null-deref/use-after-free in timer_handler().
+- Restores the previous SIGALRM disposition via sigaction() (saved in m_prevSigalrmAction by Initialize()).
 - Calls stopMaintenanceTasks() before IARM deinit (under IARM build).
 - Removes IARM event handler and nulls singleton instance in deinit path.
 - Releases IShell and IAuthService interface references.
