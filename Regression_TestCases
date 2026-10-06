@@ -1,0 +1,219 @@
+Test Scenarios
+Test case to verify maintenance.log
+Test case to verify maintenance modes
+Test case to verify Unsolicited Maintenance (Boot)
+Test case to verify Scheduled Window
+Verify MM doesn't trigger another maintenance when maintenance is in progress
+Test case to verify Maintenance Cycle Control
+Test case to verify maintenance manager with NO internet
+Test case to verify WhoAmI behaviour
+Test case to verify Firmware & Critical Update Events
+Test case to verify Tasks Visibility
+Test case to verify suppress maintenance (Applicable only for xumo devices)
+Test case to verify Maintenance status and start time
+Test case to verify No Schedule
+Test case to verify maintenance during deepsleep
+Test case to verify time taken to execute curl commands
+Test case to verify Persistence of maintenance_mgr_record.conf
+
+
+Test Cases
+
+S.No	Test Case Name	 #	Test Step	Command to executed	Expected Result	Expected Logline
+1	Test case to verify maintenance.log	
+
+1	Verify maintenance.log is present	cd /opt/logs           &      ls	Maintenance.log should present under /opt/logs folder	
+2	Remove manitenance.log	rm -rf /opt/logs/maintenance.log	
+
+3	Trigger maintenance manager  manually	curl -H "Authorization: Bearer" --header "Content-Type: application/json" --request POST --silent -d '{"jsonrpc":"2.0","id":"3","method":"org.rdk.MaintenanceManager.1.startMaintenance","params":{}}' http://127.0.0.1:9998/jsonrpc	Maintenance should be triggered successfully	{"jsonrpc":"2.0","id":3,"result":{"success":true}}
+4	Verify maintenance is started	grep -inr ""maintenanceStatus":"MAINTENANCE_STARTED"" /opt/logs/maintenance.log	Maintenance should started successfully	"maintenanceStatus":"MAINTENANCE_STARTED"
+5	Verify RFC task is started	grep -inr "Starting Timer for /lib/rdk/Start_MaintenanceTasks.sh RFC" /opt/logs/maintenance.log	RFC task should be started successfully	Starting Timer for /lib/rdk/Start_MaintenanceTasks.sh RFC
+6	Verify RFC task is completed	grep -inr "MAINTENANCE_RFC_COMPLETE" /opt/logs/maintenance.log	RFC task should be completed successfully	MAINTENANCE_RFC_COMPLETE
+7	Verify swupdate task is started	grep -inr "Starting Task /lib/rdk/Start_MaintenanceTasks.sh SWUPDATE &" /opt/logs/maintenance.log	Swupdate task is started successfully	Starting Task /lib/rdk/Start_MaintenanceTasks.sh SWUPDATE &
+8	Verify swupdate task in completed	grep -inr "MAINTENANCE_FWDOWNLOAD_ERROR" /opt/logs/maintenance.log                                                                                         grep -inr "MAINTENANCE_FWDOWNLOAD_COMPLETE" /opt/logs/maintenance.log	Swupdate task is completed successfully	MAINTENANCE_FWDOWNLOAD_ERROR                                                   MAINTENANCE_FWDOWNLOAD_COMPLETE
+9	Verify logupload task is started successfully	grep -inr "Starting Task /lib/rdk/Start_MaintenanceTasks.sh LOGUPLOAD" /opt/logs/maintenance.log	Logupload task should start successfully	Starting Task /lib/rdk/Start_MaintenanceTasks.sh LOGUPLOAD
+10	Verify logupload task is completed	grep -inr "MAINTENANCE_LOGUPLOAD_ERROR" /opt/logs/maintenance.log                                                                                         grep -inr "MAINTENANCE_LOGUPLOAD_COMPLETE" /opt/logs/maintenance.log	Logupload task should complete successfully	MAINTENANCE_LOGUPLOAD_COMPLETE                              MAINTENANCE_LOGUPLOAD_ERROR
+11	Verify maintenance task is completed	grep -inr ""maintenanceStatus":"MAINTENANCE_ERROR"" /opt/logs/maintenance.log                                                                                         grep -inr ""maintenanceStatus":"MAINTENANCE_COMPLETE"" /opt/logs/maintenance.log	Maintenance task should be completed successfully	"maintenanceStatus":"MAINTENANCE_ERROR"          "maintenanceStatus":"MAINTENANCE_COMPLETE"
+12	Verify any crash is observed	grep -rin "process crashed" /opt/logs/core_log.txt	No crash should be observed	
+
+
+2. Test case to verify maintenance modes	
+
+1	SET the maintenance mode as BACKGROUND  and OptOut as IGNORE_UPDATE	curl -H "Authorization: Bearer" --header "Content-Type: application/json" --request POST --silent -d '{"jsonrpc":"2.0","id":"5","method":"org.rdk.MaintenanceManager.1.setMaintenanceMode","params":{"maintenanceMode":"BACKGROUND","optOut":"IGNORE_UPDATE"}}' http://127.0.0.1:9998/jsonrpc	Maintenance mode is SET as BACKGROUND  and OptOut as IGNORE_UPDATE	{"jsonrpc":"2.0","id":5,"result":{"success":true}}
+2	Remove maintenance.log	rm -rf /opt/logs/maintenance.log	
+
+3	Trigger maintenance manager manually	curl -H "Authorization: Bearer" --header "Content-Type: application/json" --request POST --silent -d '{"jsonrpc":"2.0","id":"3","method":"org.rdk.MaintenanceManager.1.startMaintenance","params":{}}' http://127.0.0.1:9998/jsonrpc	Maintenance should be triggered successfully	{"jsonrpc":"2.0","id":3,"result":{"success":true}}
+4	Verify maintenance is started	grep -inr ""maintenanceStatus":"MAINTENANCE_STARTED"" /opt/logs/maintenance.log	Maintenance should started successfully	"maintenanceStatus":"MAINTENANCE_STARTED"
+5	Verify maintenance mode is in BACKGROUND	grep -inr "SetMaintenanceMode new_mode = BACKGROUND" /opt/logs/maintenance.log	Maintenance mode should be in BACKGROUND	SetMaintenanceMode new_mode = BACKGROUND
+6	Verify OptOut is in IGNORE_UPDATE	grep -inr "SetMaintenanceMode optOut = IGNORE_UPDATE" /opt/logs/maintenance.log	Optout value is in IGNORE_UPDATE	SetMaintenanceMode optOut = IGNORE_UPDATE
+7	Remove maintenance.log 	rm -rf /opt/logs/maintenance.log	
+
+8	SET the maintenance mode as FOREGROUND  and OptOut as NONE	curl -H "Authorization: Bearer" --header "Content-Type: application/json" --request POST --silent -d '{"jsonrpc":"2.0","id":"4","method":"org.rdk.MaintenanceManager.1.setMaintenanceMode","params":{"maintenanceMode":"FOREGROUND","optOut":"NONE"}}' http://127.0.0.1:9998/jsonrpc	Maintenance mode is SET as FOREGROUND  and OptOut as NONE	{"jsonrpc":"2.0","id":4,"result":{"success":true}}
+9	Verify maintenance manager is triggered manually	curl -H "Authorization: Bearer" --header "Content-Type: application/json" --request POST --silent -d '{"jsonrpc":"2.0","id":"3","method":"org.rdk.MaintenanceManager.1.startMaintenance","params":{}}' http://127.0.0.1:9998/jsonrpc	Maintenance should be triggered successfully	{"jsonrpc":"2.0","id":3,"result":{"success":true}}
+10	Verify maintenance is started	grep -inr ""maintenanceStatus":"MAINTENANCE_STARTED"" /opt/logs/maintenance.log	Maintenance should started successfully	"maintenanceStatus":"MAINTENANCE_STARTED"
+11	Verify maintenance mode is in FOREGROUND	grep -inr "SetMaintenanceMode new_mode = FOREGROUND" /opt/logs/maintenance.log	Maintenance mode should be in FOREGROUND	SetMaintenanceMode new_mode = FOREGROUND
+12	Verify OptOut is in NONE	grep -inr "SetMaintenanceMode optOut = NONE" /opt/logs/maintenance.log	Optout value is in NONE	SetMaintenanceMode optOut = NONE
+13	Verify SET Invalid Maintenance mode and optout value	curl -H "Authorization: Bearer" --header "Content-Type: application/json" --request POST --silent -d '{"jsonrpc":"2.0","id":"4","method":"org.rdk.MaintenanceManager.1.setMaintenanceMode","params":{"maintenanceMode":"INVALID_MODE","optOut":"BAD_OPTOUT"}}' http://127.0.0.1:9998/jsonrpc	Invalid maintenance mode and optout values are unable to SET	{"jsonrpc":"2.0","id":4,"result":{"success":false}}
+
+3	Test case to verify Unsolicited Maintenance (Boot)	
+
+1	Reboot the device	reboot & exit	Device should be rebooted successfully	
+2	Verify maintenance is started	grep -inr ""maintenanceStatus":"MAINTENANCE_STARTED"" /opt/logs/maintenance.log	Maintenance should started successfully	"maintenanceStatus":"MAINTENANCE_STARTED"
+3	Verify RFC task is started	grep -inr "Starting Timer for /lib/rdk/Start_MaintenanceTasks.sh RFC" /opt/logs/maintenance.log	RFC task should be started successfully	Starting Timer for /lib/rdk/Start_MaintenanceTasks.sh RFC
+4	Verify RFC task is completed	grep -inr "MAINTENANCE_RFC_COMPLETE" /opt/logs/maintenance.log	RFC task should be completed successfully	MAINTENANCE_RFC_COMPLETE
+5	Verify swupdate task is started	grep -inr "Starting Task /lib/rdk/Start_MaintenanceTasks.sh SWUPDATE &" /opt/logs/maintenance.log	Swupdate task is started successfully	Starting Task /lib/rdk/Start_MaintenanceTasks.sh SWUPDATE &
+6	Verify swupdate task in completed	grep -inr "MAINTENANCE_FWDOWNLOAD_ERROR" /opt/logs/maintenance.log                                                                                         grep -inr "MAINTENANCE_FWDOWNLOAD_COMPLETE" /opt/logs/maintenance.log	Swupdate task is completed successfully	MAINTENANCE_FWDOWNLOAD_ERROR                                                   MAINTENANCE_FWDOWNLOAD_COMPLETE
+7	Verify logupload task is started successfully	grep -inr "Starting Task /lib/rdk/Start_MaintenanceTasks.sh LOGUPLOAD" /opt/logs/maintenance.log	Logupload task should start successfully	Starting Task /lib/rdk/Start_MaintenanceTasks.sh LOGUPLOAD
+8	Verify logupload task is completed	grep -inr "MAINTENANCE_LOGUPLOAD_ERROR" /opt/logs/maintenance.log                                                                                         grep -inr "MAINTENANCE_LOGUPLOAD_COMPLETE" /opt/logs/maintenance.log	Logupload task should complete successfully	MAINTENANCE_LOGUPLOAD_COMPLETE                              MAINTENANCE_LOGUPLOAD_ERROR
+9	Verify maintenance task is completed	grep -inr ""maintenanceStatus":"MAINTENANCE_ERROR"" /opt/logs/maintenance.log                                                                                         grep -inr ""maintenanceStatus":"MAINTENANCE_COMPLETE"" /opt/logs/maintenance.log	Maintenance task should be completed successfully	"maintenanceStatus":"MAINTENANCE_ERROR"          "maintenanceStatus":"MAINTENANCE_COMPLETE"
+
+4	Test case to verify Scheduled Window	
+
+1	Remove Maintenance.log 	rm -rf /opt/logs/maintenance.log	
+2	Set the maintenance start time in /opt/rdk_maintenance.conf	vi /opt/rdk_maintenance.conf	Maintenance start time should be successfully SET	
+3	Verify start time is correctly fetched using getMaintenanceStartTime curl command	curl -H "Authorization: Bearer" --header "Content-Type: application/json" --request POST --silent -d '{"jsonrpc":"2.0","id":"3","method":"org.rdk.MaintenanceManager.1.getMaintenanceStartTime","params":{}}' http://127.0.0.1:9998/jsonrpc	Maintenance start time should be correctly fetched	
+4	Verify maintenance is started on MaintenanceStartTime	grep -inr "maintenanceStatus" /opt/logs/maintenance.log	Maintenance should start on MaintenanceStartTime	"maintenanceStatus":"MAINTENANCE_STARTED"
+5	Verify maintenance task is completed	grep -inr ""maintenanceStatus":"MAINTENANCE_ERROR"" /opt/logs/maintenance.log                                                                                         grep -inr ""maintenanceStatus":"MAINTENANCE_COMPLETE"" /opt/logs/maintenance.log	Maintenance task should be completed successfully	"maintenanceStatus":"MAINTENANCE_ERROR"          "maintenanceStatus":"MAINTENANCE_COMPLETE"
+
+5	Test case to verify startMaintenance (Active)	
+
+1	Reboot the device	reboot & exit	Device should be rebooted successfully	
+2	Verify maintenance is started	grep -inr ""maintenanceStatus":"MAINTENANCE_STARTED"" /opt/logs/maintenance.log	Maintenance should started successfully	"maintenanceStatus":"MAINTENANCE_STARTED"
+3	Verify trigger maintenance again manually	curl -H "Authorization: Bearer" --header "Content-Type: application/json" --request POST --silent -d '{"jsonrpc":"2.0","id":"3","method":"org.rdk.MaintenanceManager.1.startMaintenance","params":{}}' http://127.0.0.1:9998/jsonrpc	Curl command execution should fail	{"jsonrpc":"2.0","id":3,"result":{"success":false}}
+4	Verify maintenance is waiting to complete previous one	grep -inr "Already a maintenance is in Progress" /opt/logs/maintenance.log	Mainteance should wait for previous one to complete	Already a maintenance is in Progress. Please wait for it to complete !!
+5	Verify status of previous maintenance task	grep -inr ""maintenanceStatus":"MAINTENANCE_ERROR"" /opt/logs/maintenance.log                                                                                         grep -inr ""maintenanceStatus":"MAINTENANCE_COMPLETE"" /opt/logs/maintenance.log	Maintenance task should be completed successfully	"maintenanceStatus":"MAINTENANCE_ERROR"          "maintenanceStatus":"MAINTENANCE_COMPLETE"
+
+6	Test case to verify Maintenance Cycle Control	
+
+1	Reboot the device	reboot & exit	Device should be rebooted successfully	
+2	Verify maintenance is started	grep -inr ""maintenanceStatus":"MAINTENANCE_STARTED"" /opt/logs/maintenance.log	Maintenance should started successfully	"maintenanceStatus":"MAINTENANCE_STARTED"
+3	Stop the maintenance	curl -H "Authorization: Bearer" --header "Content-Type: application/json" --request POST --silent -d '{"jsonrpc":"2.0","id":"3","method":"org.rdk.MaintenanceManager.1.stopMaintenance","params":{}}' http://127.0.0.1:9998/jsonrpc 	Maintenance should be stopped suceessfully	{"jsonrpc":"2.0","id":3,"result":{"success":true}}
+4	Verify the maintenance status	grep -inr "maintenanceStatus" /opt/logs/maintenance.log	Maintenance status should be ERROR	Maintenance has been stopped. Hence setting maintenance status to MAINTENANCE_ERROR
+5	Reboot the device	reboot & exit	Device should be rebooted successfully	
+6	Verify maintenance is started	grep -inr ""maintenanceStatus":"MAINTENANCE_STARTED"" /opt/logs/maintenance.log	Maintenance should started successfully	"maintenanceStatus":"MAINTENANCE_STARTED"
+7	Verify maintenance task is completed	grep -inr ""maintenanceStatus":"MAINTENANCE_ERROR"" /opt/logs/maintenance.log                                                                                         grep -inr ""maintenanceStatus":"MAINTENANCE_COMPLETE"" /opt/logs/maintenance.log	Maintenance task should be completed successfully	"maintenanceStatus":"MAINTENANCE_ERROR"          "maintenanceStatus":"MAINTENANCE_COMPLETE"
+8	Verify stop the maintenance	curl -H "Authorization: Bearer" --header "Content-Type: application/json" --request POST --silent -d '{"jsonrpc":"2.0","id":"3","method":"org.rdk.MaintenanceManager.1.stopMaintenance","params":{}}' http://127.0.0.1:9998/jsonrpc 	Maintenance should be stopped suceessfully	{"jsonrpc":"2.0","id":3,"result":{"success":false}}
+9	Verify stop log in maintence.log	grep -inr "stop the Maintenance execution" /opt/logs/maintenance.log	Maintenance was not able to stop	 Maintenance Status is not MAINTENANCE_STARTED, Hence can not stop the Maintenance execution
+
+7	Test case to verify maintenance manager with NO internet	
+
+1	Reboot the device	reboot & exit	Device should be rebooted successfully	
+2	Verify maintenance is started	grep -inr ""maintenanceStatus":"MAINTENANCE_STARTED"" /opt/logs/maintenance.log	Maintenance should started successfully	"maintenanceStatus":"MAINTENANCE_STARTED"
+3	Verify internet is disconnected	grep -inr "Network plugin is not active" /opt/logs.maintenance.log	Internet should be disconnected	Network plugin is not active
+4	Verify retries for 4times	grep -inr " Network retries [4/4]" /opt/logs/maintenance.log	Retry should happen for 4times	 Network retries [4/4]
+5	Verify Maintenance status is ERROR	grep -inr "maintenanceStatus" /opt/logs/maintenance.log	Maintenance should be ERROR	maintenanceStatus:"MAINTENANCE_ERROR"
+6	Verify device is connected with internet	grep -inr "Received onInternetStatusChange event" /opt/logs/maintenance.log	Device should be conneted with internet	 Received onInternetStatusChange event: [FULLY_CONNECTED:3]
+7	Verify critcal task started	grep -inr "Starting Critical Tasks" /opt/logs/maintenance.log	Critical task should start once internet is connected	Starting Critical Tasks
+8	Verify RFC task is started	grep -inr "Starting /lib/rdk/Start_MaintenanceTasks.sh RFC" /opt/logs/maintenance.log	RFC task should start	Starting /lib/rdk/Start_MaintenanceTasks.sh RFC
+9	Verify xconfcheck task is started	grep -inr "Starting /lib/rdk/xconfImageCheck.sh" /opt/logs/maintenance.log	xconfimagecheck task should start	Starting /lib/rdk/xconfImageCheck.sh
+
+8	Test case to verify WhoAmI behaviour	
+
+1	Reboot the device	reboot & exit	Device should be rebooted successfully	
+2	Verify maintenance is started	grep -inr ""maintenanceStatus":"MAINTENANCE_STARTED"" /opt/logs/maintenance.log	Maintenance should started successfully	"maintenanceStatus":"MAINTENANCE_STARTED"
+3	Verify once device is up and connectedToInternet status true	grep -inr "connectedToInternet status" /opt/logs/maintenance.log*	Device should be connected to Internet	connectedToInternet status true
+4	Verify if Network plugin is active	grep -inr "Network plugin is active" /opt/logs/maintenance.log*	Network plugin should be active	Network plugin is active
+5	Verify WhoAmI function is active in maintenance manager	grep -inr "org.rdk.SecManager is active" /opt/logs/maintenance.log*	WhoAmI should be active	org.rdk.SecManager is active
+6	Verify correct partnerId is passed by GDI and stored in RFC	grep -inr "partnerId" /opt/logs/maintenance.log	correct partnerId should be passed by GDI and stored in RFC	partnerId : sky-uk or partnerId : comcast
+7	Verify correct Os class is passed by GDI and stored in RFC	grep -inr "osClass" /opt/logs/maintenance.log	correct osClass should be passed by GDI and stored in RFC	osClass : entos-immerse-rdk
+8	Verify correct regionalConfigService is passed by GDI and stored in RFC	grep -inr "regionalConfigService" /opt/logs/maintenance.log	correct regionalConfigService should be passed by GDI and stored in RFC	https://xconf.xdp.eu-1.xcal.tv
+9	Verify whoami status	grep -inr "knowWhoAmI() returned successfully" /opt/logs/maintenance.log	Whoami status should be successful	knowWhoAmI() returned successfully
+10	Verify RFC task is started	grep -inr "Starting Timer for /lib/rdk/Start_MaintenanceTasks.sh RFC" /opt/logs/maintenance.log	RFC task should be started successfully	Starting Timer for /lib/rdk/Start_MaintenanceTasks.sh RFC
+11	Verify RFC task is completed	grep -inr "MAINTENANCE_RFC_COMPLETE" /opt/logs/maintenance.log	RFC task should be completed successfully	MAINTENANCE_RFC_COMPLETE
+12	Verify swupdate task is started	grep -inr "Starting Task /lib/rdk/Start_MaintenanceTasks.sh SWUPDATE &" /opt/logs/maintenance.log	Swupdate task is started successfully	Starting Task /lib/rdk/Start_MaintenanceTasks.sh SWUPDATE &
+13	Verify swupdate task in completed	grep -inr "MAINTENANCE_FWDOWNLOAD_ERROR" /opt/logs/maintenance.log                                                                                         grep -inr "MAINTENANCE_FWDOWNLOAD_COMPLETE" /opt/logs/maintenance.log	Swupdate task is completed successfully	MAINTENANCE_FWDOWNLOAD_ERROR                                                   MAINTENANCE_FWDOWNLOAD_COMPLETE
+14	Verify logupload task is started successfully	grep -inr "Starting Task /lib/rdk/Start_MaintenanceTasks.sh LOGUPLOAD" /opt/logs/maintenance.log	Logupload task should start successfully	Starting Task /lib/rdk/Start_MaintenanceTasks.sh LOGUPLOAD
+15	Verify logupload task is completed	grep -inr "MAINTENANCE_LOGUPLOAD_ERROR" /opt/logs/maintenance.log                                                                                         grep -inr "MAINTENANCE_LOGUPLOAD_COMPLETE" /opt/logs/maintenance.log	Logupload task should complete successfully	MAINTENANCE_LOGUPLOAD_COMPLETE                              MAINTENANCE_LOGUPLOAD_ERROR
+16	Verify maintenance task is completed	grep -inr ""maintenanceStatus":"MAINTENANCE_ERROR"" /opt/logs/maintenance.log                                                                                         grep -inr ""maintenanceStatus":"MAINTENANCE_COMPLETE"" /opt/logs/maintenance.log	Maintenance task should be completed successfully	"maintenanceStatus":"MAINTENANCE_ERROR"          "maintenanceStatus":"MAINTENANCE_COMPLETE"
+
+9	Test case to verify Firmware & Critical Update Events	
+
+1	Configure the build using mock server with reboot immediatelyTRUE	MOCK Server Configuration Tool	Build configuration should be successful	
+2	Reboot the device	reboot & exit	Device should be rebooted successfully	
+3	Verify firmware upgrader is started	grep -inr "Starting software update" /opt/logs/swupdate.log	Firmware upgrade should start	/lib/rdk/Start_MaintenanceTasks.sh: Starting software update
+4	Verify maintenance is started	grep -inr ""maintenanceStatus":"MAINTENANCE_STARTED"" /opt/logs/maintenance.log	Maintenance should started successfully	"maintenanceStatus":"MAINTENANCE_STARTED"
+5	Verify MAINTENANCE_CRITICAL_UPDATE in maintenance.log	grep -inr ""MAINTENANCE_CRITICAL_UPDATE"" /opt/logs/maintenance.log	MaintMGR Status should be MAINTENANCE_CRITICAL_UPDATE	MAINTENANCE_CRITICAL_UPDATE
+6	Verify MaintMGR Status as MAINTENANCE_REBOOT_REQUIRED	grep -inr "MAINTENANCE_REBOOT_REQUIRED" /opt/logs/maintenance.log	MaintMGR Status should be MAINTENANCE_REBOOT_REQUIRED	MAINTENANCE_REBOOT_REQUIRED
+7	Verify reboot pending status is true	grep -inr "isRebootPending" /opt/logs/maintenance.log	Reboot pending status should be true	"isRebootPending":true
+
+10	Test case to verify Tasks Visibility	
+
+1	Verify maintenance manager is triggered manually	curl -H "Authorization: Bearer" --header "Content-Type: application/json" --request POST --silent -d '{"jsonrpc":"2.0","id":"3","method":"org.rdk.MaintenanceManager.1.startMaintenance","params":{}}' http://127.0.0.1:9998/jsonrpc	Maintenance should be triggered successfully	{"jsonrpc":"2.0","id":3,"result":{"success":true}}
+2	Verify maintenance is started	grep -inr ""maintenanceStatus":"MAINTENANCE_STARTED"" /opt/logs/maintenance.log	Maintenance should started successfully	"maintenanceStatus":"MAINTENANCE_STARTED"
+3	Verify RFC task is started	grep -inr "Starting Timer for /lib/rdk/Start_MaintenanceTasks.sh RFC" /opt/logs/maintenance.log	RFC task should be started successfully	Starting Timer for /lib/rdk/Start_MaintenanceTasks.sh RFC
+4	Verify RFC task is completed	grep -inr "MAINTENANCE_RFC_COMPLETE" /opt/logs/maintenance.log	RFC task should be completed successfully	MAINTENANCE_RFC_COMPLETE
+5	Verify swupdate task is started	grep -inr "Starting Task /lib/rdk/Start_MaintenanceTasks.sh SWUPDATE &" /opt/logs/maintenance.log	Swupdate task is started successfully	Starting Task /lib/rdk/Start_MaintenanceTasks.sh SWUPDATE &
+6	Verify swupdate task in completed	grep -inr "MAINTENANCE_FWDOWNLOAD_ERROR" /opt/logs/maintenance.log                                                                                         grep -inr "MAINTENANCE_FWDOWNLOAD_COMPLETE" /opt/logs/maintenance.log	Swupdate task is completed successfully	MAINTENANCE_FWDOWNLOAD_ERROR                                                   MAINTENANCE_FWDOWNLOAD_COMPLETE
+7	Verify logupload task is started successfully	grep -inr "Starting Task /lib/rdk/Start_MaintenanceTasks.sh LOGUPLOAD" /opt/logs/maintenance.log	Logupload task should start successfully	Starting Task /lib/rdk/Start_MaintenanceTasks.sh LOGUPLOAD
+8	Verify logupload task is completed	grep -inr "MAINTENANCE_LOGUPLOAD_ERROR" /opt/logs/maintenance.log                                                                                         grep -inr "MAINTENANCE_LOGUPLOAD_COMPLETE" /opt/logs/maintenance.log	Logupload task should complete successfully	MAINTENANCE_LOGUPLOAD_COMPLETE                              MAINTENANCE_LOGUPLOAD_ERROR
+9	Verify maintenance task is completed	grep -inr ""maintenanceStatus":"MAINTENANCE_ERROR"" /opt/logs/maintenance.log                                                                                         grep -inr ""maintenanceStatus":"MAINTENANCE_COMPLETE"" /opt/logs/maintenance.log	Maintenance task should be completed successfully	"maintenanceStatus":"MAINTENANCE_ERROR"          "maintenanceStatus":"MAINTENANCE_COMPLETE"
+
+11	Test case to verify suppress maintenance (Applicable only for xumo devices)	
+
+1	Reboot the device	reboot & exit	Device should be rebooted successfully	
+2	Verify maintenance is started	grep -inr ""maintenanceStatus":"MAINTENANCE_STARTED"" /opt/logs/maintenance.log	Maintenance should started successfully	"maintenanceStatus":"MAINTENANCE_STARTED"
+3	Verify RFC task is started	grep -inr "Starting Timer for /lib/rdk/Start_MaintenanceTasks.sh RFC" /opt/logs/maintenance.log	RFC task should be started successfully	Starting Timer for /lib/rdk/Start_MaintenanceTasks.sh RFC
+4	Verify RFC task is completed	grep -inr "MAINTENANCE_RFC_COMPLETE" /opt/logs/maintenance.log	RFC task should be completed successfully	MAINTENANCE_RFC_COMPLETE
+5	Verify swupdate task is started	grep -inr "Starting Task /lib/rdk/Start_MaintenanceTasks.sh SWUPDATE &" /opt/logs/maintenance.log	Swupdate task is started successfully	Starting Task /lib/rdk/Start_MaintenanceTasks.sh SWUPDATE &
+6	Verify swupdate task in completed	grep -inr "MAINTENANCE_FWDOWNLOAD_ERROR" /opt/logs/maintenance.log                                                                                         grep -inr "MAINTENANCE_FWDOWNLOAD_COMPLETE" /opt/logs/maintenance.log	Swupdate task is completed successfully	MAINTENANCE_FWDOWNLOAD_ERROR                                                   MAINTENANCE_FWDOWNLOAD_COMPLETE
+7	Verify logupload task is started successfully	grep -inr "Starting Task /lib/rdk/Start_MaintenanceTasks.sh LOGUPLOAD" /opt/logs/maintenance.log	Logupload task should start successfully	Starting Task /lib/rdk/Start_MaintenanceTasks.sh LOGUPLOAD
+8	Verify logupload task is completed	grep -inr "MAINTENANCE_LOGUPLOAD_ERROR" /opt/logs/maintenance.log                                                                                         grep -inr "MAINTENANCE_LOGUPLOAD_COMPLETE" /opt/logs/maintenance.log	Logupload task should complete successfully	MAINTENANCE_LOGUPLOAD_COMPLETE                              MAINTENANCE_LOGUPLOAD_ERROR
+9	Verify maintenance task is completed	grep -inr ""maintenanceStatus":"MAINTENANCE_ERROR"" /opt/logs/maintenance.log                                                                                         grep -inr ""maintenanceStatus":"MAINTENANCE_COMPLETE"" /opt/logs/maintenance.log	Maintenance task should be completed successfully	"maintenanceStatus":"MAINTENANCE_ERROR"          "maintenanceStatus":"MAINTENANCE_COMPLETE"
+
+12	Test case to verify Maintenance status and start time	
+
+1	Reboot the device	reboot & exit	Device should be rebooted successfully	
+2	Verify maintenance is started	grep -inr ""maintenanceStatus":"MAINTENANCE_STARTED"" /opt/logs/maintenance.log	Maintenance should started successfully	"maintenanceStatus":"MAINTENANCE_STARTED"
+3	Verify the maintenance Status	curl -H "Authorization: Bearer" --header "Content-Type: application/json" --request POST --silent -d '{"jsonrpc":"2.0","id":"3","method":"org.rdk.MaintenanceManager.1.getMaintenanceActivityStatus","params":{}}' http://127.0.0.1:9998/jsonrpc	Maintenance should be in INPROGRESS	{"jsonrpc":"2.0","id":3,"result":{"maintenanceStatus":"MAINTENANCE_STARTED","LastSuccessfulCompletionTime":1770697490,"isCriticalMaintenance":false,"isRebootPending":false,"success":true}}
+4	Verify the maintenance Start time	curl -H "Authorization: Bearer" --header "Content-Type: application/json" --request POST --silent -d '{"jsonrpc":"2.0","id":"3","method":"org.rdk.MaintenanceManager.1.getMaintenanceStartTime","params":{}}' http://127.0.0.1:9998/jsonrpc	Maintenance start time should displayed	{"jsonrpc":"2.0","id":3,"result":{"maintenanceStartTime":1770778799,"success":true}}
+5	Verify maintenance task is completed	grep -inr ""maintenanceStatus":"MAINTENANCE_ERROR"" /opt/logs/maintenance.log                                                                                         grep -inr ""maintenanceStatus":"MAINTENANCE_COMPLETE"" /opt/logs/maintenance.log	Maintenance task should be completed successfully	"maintenanceStatus":"MAINTENANCE_ERROR"          "maintenanceStatus":"MAINTENANCE_COMPLETE"
+6	Verify the maintenance Status	curl -H "Authorization: Bearer" --header "Content-Type: application/json" --request POST --silent -d '{"jsonrpc":"2.0","id":"3","method":"org.rdk.MaintenanceManager.1.getMaintenanceActivityStatus","params":{}}' http://127.0.0.1:9998/jsonrpc	Maintenance should be in INPROGRESS	{"jsonrpc":"2.0","id":3,"result":{"maintenanceStatus":"MAINTENANCE_COMPLETE","LastSuccessfulCompletionTime":1770697490,"isCriticalMaintenance":false,"isRebootPending":false,"success":true}}
+
+13	Test case to verify No Schedule	
+
+1	Verify edit the /opt/rdk_maintenance.conf file name	mv /opt/rdk_maintenance.conf /opt/rdk_maintenance.confi	opt/rdk_maintenance.conf file name should be modified	
+2	Verify the maintenance start time	curl -H "Authorization: Bearer" --header "Content-Type: application/json" --request POST --silent -d '{"jsonrpc":"2.0","id":"3","method":"org.rdk.MaintenanceManager.1.getMaintenanceStartTime","params":{}}' http://127.0.0.1:9998/jsonrpc	Maintenance start time should be -1	
+
+14	Test case to  verify maintenance during deepsleep	
+
+1	Reboot the device	reboot & exit	Device should be rebooted successfully	
+2	Verify maintenance is started	grep -inr ""maintenanceStatus":"MAINTENANCE_STARTED"" /opt/logs/maintenance.log	Maintenance should started successfully	"maintenanceStatus":"MAINTENANCE_STARTED"
+3	Verify device is in deepsleep	SetPowerState DEEPSLEEP	Device should be in DEEPSLEEP	SetPowerState :: Success
+4	Verify the device is ON	SetPowerState ON	Device should be in ON	SetPowerState :: Success
+5	Verify maintenance task is completed	grep -inr ""maintenanceStatus":"MAINTENANCE_ERROR"" /opt/logs/maintenance.log                                                                                         grep -inr ""maintenanceStatus":"MAINTENANCE_COMPLETE"" /opt/logs/maintenance.log	Maintenance task should be completed successfully	"maintenanceStatus":"MAINTENANCE_ERROR"          "maintenanceStatus":"MAINTENANCE_COMPLETE"
+
+15	Test case to verify time taken to execute curl commands	
+
+1	Verify execute Start maintenance curl command	time curl -H "Authorization: Bearer" --header "Content-Type: application/json" --request POST --silent -d '{"jsonrpc":"2.0","id":"3","method":"org.rdk.MaintenanceManager.1.startMaintenance","params":{}}' http://127.0.0.1:9998/jsonrpc	Curl command should be successfully executed	
+2	Verify execute stop maintenance curl command	time curl -H "Authorization: Bearer" --header "Content-Type: application/json" --request POST --silent -d '{"jsonrpc":"2.0","id":"3","method":"org.rdk.MaintenanceManager.1.stopMaintenance","params":{}}' http://127.0.0.1:9998/jsonrpc 	Curl command should be successfully executed	
+3	Verify execute getmaintenance activity curl commnd	time curl -H "Authorization: Bearer" --header "Content-Type: application/json" --request POST --silent -d '{"jsonrpc":"2.0","id":"3","method":"org.rdk.MaintenanceManager.1.getMaintenanceActivityStatus","params":{}}' http://127.0.0.1:9998/jsonrpc	Curl command should be successfully executed	
+4	Verify execute getmaintenance start time curl command	time curl -H "Authorization: Bearer" --header "Content-Type: application/json" --request POST --silent -d '{"jsonrpc":"2.0","id":"3","method":"org.rdk.MaintenanceManager.1.getMaintenanceStartTime","params":{}}' http://127.0.0.1:9998/jsonrpc	Curl command should be successfully executed	
+
+16	Test case to verify Persistence of maintenance_mgr_record.conf	
+
+1	Verify maintenance_mgr_record.conf is present under opt	cat /opt/maintenance_mgr_record.conf	maintenance_mgr_record.conf should present under opt	
+2	Verify the content in maintenance_mgr_record.conf	cat /opt/maintenance_mgr_record.conf	background_flag & softwareoptout value should present in maintenance_mgr_record.conf 	background_flag=true     softwareoptout=NONE
+
+17	Test case to verify Plugin lifecycle	
+
+1	Deactivate the maintenance manager	curl --header "Content-Type: application/json" --request POST --data '{"jsonrpc":"2.0","id":"3","method": "Controller.1.deactivate", "params": {"callsign":"org.rdk.MaintenanceManager"}}' http://127.0.0.1:9998/jsonrpc	Maintenance manager should be deactived successfully	{"jsonrpc":"2.0","id":3,"result":null}
+
+
+2	Verify maintenance is deactivated 	grep -inr "Deinitialize" /opt/logs/maintenance.log	Maintenance should be deactivated 	Deinitialize: Timer Deleted on Deinitialization
+
+
+3	Verify Maintenance plugin is activated automatically	grep - inr "Activating plugin [org.rdk.MaintenanceManager] Requested" /opt/logs/wpeframework.log	Maintenance plugin should activated automatically	Activating plugin [org.rdk.MaintenanceManager] Requested
+
+
+4	Verify Maintenance is started	grep -inr "MAINTENANCE_STARTED" /opt/logs/maintenance.log	Maintenance should start successfully	{"maintenanceStatus":"MAINTENANCE_STARTED"}
+
+
+5	Verify maintenance task is completed	
+grep -inr ""maintenanceStatus":"MAINTENANCE_ERROR"" /opt/logs/maintenance.log                                                                                        
+
+grep -inr ""maintenanceStatus":"MAINTENANCE_COMPLETE"" /opt/logs/maintenance.log
+
+Maintenance task should be completed successfully	
+"maintenanceStatus":"MAINTENANCE_ERROR"   
+
+ "maintenanceStatus":"MAINTENANCE_COMPLETE"
